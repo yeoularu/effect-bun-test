@@ -1,0 +1,53 @@
+{
+  "name": "@yeoularu/effect-bun-test",
+  "version": "0.1.0",
+  "description": "Effect v4 test helpers for Bun's native test runner",
+  "type": "module",
+  "license": "MIT",
+  "author": "Yeoularu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yeoularu/effect-bun-test.git"
+  },
+  "homepage": "https://github.com/yeoularu/effect-bun-test#readme",
+  "bugs": {
+    "url": "https://github.com/yeoularu/effect-bun-test/issues"
+  },
+  "keywords": [
+    "bun",
+    "effect",
+    "test",
+    "typescript"
+  ],
+  "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "bun": ">=1.3.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --concurrent --isolate",
+    "check": "bun run typecheck && bun run test",
+    "prepublishOnly": "bun run check"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.0-rc.111"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "effect": "4.0.0-rc.111",
+    "typescript": "7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "packageManager": "bun@1.4.0"
+}
