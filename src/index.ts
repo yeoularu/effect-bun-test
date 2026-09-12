@@ -15,7 +15,7 @@ import type * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import type * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import type * as FC from "effect/testing/FastCheck"
+import type * as Arbitrary from "effect/unstable/arbitrary/Arbitrary"
 import * as internal from "./internal/internal.ts"
 
 /** The standard Bun test API, re-exported for one-import test files. */
@@ -24,7 +24,8 @@ export * from "bun:test"
 /** Strict Node assertion helpers. */
 export { strict as assert } from "node:assert"
 
-type API = typeof B.test
+/** The standard Bun test function type. */
+export type API = typeof B.test
 
 /** Public types used by the Effect-aware Bun test API. */
 export namespace BunTest {
@@ -42,12 +43,12 @@ export namespace BunTest {
   }
 
   /**
-   * Bun test options plus FastCheck parameters for property tests.
+   * Bun test options plus `Arbitrary` check options for property tests.
    *
    * @since 0.1.0
    */
   export interface TestOptions extends B.TestOptions {
-    readonly fastCheck?: FC.Parameters<any>
+    readonly arbitrary?: Arbitrary.CheckOptions
   }
 
   /** An Effect-returning test callback. */
@@ -64,10 +65,10 @@ export namespace BunTest {
     ): void
   }
 
-  /** Schema values or FastCheck arbitraries accepted by property tests. */
+  /** Schema values or `Arbitrary` values accepted by property tests. */
   export type Arbitraries =
-    | Array<Schema.Schema<any> | FC.Arbitrary<any>>
-    | { [K in string]: Schema.Schema<any> | FC.Arbitrary<any> }
+    | Array<Schema.Schema<any> | Arbitrary.Arbitrary<any>>
+    | { [K in string]: Schema.Schema<any> | Arbitrary.Arbitrary<any> }
 
   /**
    * Effect test registration with Bun modifiers and property testing.
@@ -94,7 +95,7 @@ export namespace BunTest {
         R,
         [
           {
-            [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T
+            [K in keyof Arbs]: Arbs[K] extends Arbitrary.Arbitrary<infer T> ? T
               : Arbs[K] extends Schema.Schema<infer T> ? T
               : never
           },
@@ -126,13 +127,13 @@ export namespace BunTest {
       (name: string, f: (it: BunTest.MethodsNonLive<R | R2>) => void): void
     }
 
-    /** Runs a pure property test with Schema values or FastCheck arbitraries. */
+    /** Runs a pure property test with Schema values or `Arbitrary` values. */
     readonly prop: <const Arbs extends Arbitraries>(
       name: string,
       arbitraries: Arbs,
       self: (
         properties: {
-          [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T
+          [K in keyof Arbs]: Arbs[K] extends Arbitrary.Arbitrary<infer T> ? T
             : Arbs[K] extends Schema.Schema<infer T> ? T
             : never
         },
@@ -163,6 +164,22 @@ export namespace BunTest {
     }
   }
 }
+
+/**
+ * Registers an Effect-returning test with `TestClock`, `TestConsole`, and a
+ * fresh `Scope`. Equivalent to `it.effect`.
+ *
+ * @since 0.2.0
+ */
+export const effect: BunTest.Tester<Scope.Scope> = internal.effect
+
+/**
+ * Registers an Effect-returning test with the live clock and console, plus a
+ * fresh `Scope`. Equivalent to `it.live`.
+ *
+ * @since 0.2.0
+ */
+export const live: BunTest.Tester<Scope.Scope> = internal.live
 
 /**
  * Shares a Layer across multiple serial tests and closes it after the suite.
@@ -229,3 +246,25 @@ export const it: BunTest.Methods = internal.makeMethods(B.it)
 
 /** `it` under Bun's `test` name. */
 export const test: BunTest.Methods = internal.makeMethods(B.test)
+
+/**
+ * Runs a pure property test without Effect services. Equivalent to `it.prop`.
+ *
+ * @since 0.2.0
+ */
+export const prop: BunTest.Methods["prop"] = internal.prop
+
+/**
+ * Builds a Methods object around a custom Bun test API.
+ *
+ * @since 0.2.0
+ */
+export const makeMethods: (it: API) => BunTest.Methods = internal.makeMethods
+
+/**
+ * Wraps a `describe` block, passing a Methods object to the suite body.
+ *
+ * @since 0.2.0
+ */
+export const describeWrapped: (name: string, f: (it: BunTest.Methods) => void) => void =
+  internal.describeWrapped

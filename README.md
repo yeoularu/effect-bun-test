@@ -8,7 +8,7 @@ Unofficial Effect v4 helpers for Bun's native [`bun:test`](https://bun.com/docs/
 bun add --dev @yeoularu/effect-bun-test
 ```
 
-Requires Effect v4 and Bun 1.3.3 or newer.
+Requires Effect v4 (`4.0.0-rc.113` or newer) and Bun 1.3.3 or newer.
 
 ## Overview
 
@@ -27,7 +27,7 @@ it.effect("runs an Effect", () =>
 | `it.effect` | `TestClock`, `TestConsole`, fresh `Scope` | Deterministic Effect tests |
 | `it.live` | live clock and console, fresh `Scope` | Tests that require real time or output |
 | `layer()` / `it.layer()` | shared serial Layer scope | Share resources across tests |
-| `it.prop` | pure property | Schema or FastCheck property tests |
+| `it.prop` | pure property | Schema or `Arbitrary` property tests |
 | `it.effect.prop` | Effect property with test services | Effectful property tests |
 | `flakyTest` | current environment | Bounded retries for flaky Effects |
 
@@ -98,16 +98,16 @@ Test services are included by default. Use `{ excludeTestServices: true }` only 
 
 ## Property tests
 
-Pure and Effect property tests accept Effect Schema values, FastCheck arbitraries, arrays, or records.
+Pure and Effect property tests accept Effect Schema values, `Arbitrary` values, arrays, or records.
 
 ```ts
 import { assert, it } from "@yeoularu/effect-bun-test"
 import { Effect, Schema } from "effect"
-import { FastCheck } from "effect/testing"
+import * as Arbitrary from "effect/unstable/arbitrary/Arbitrary"
 
 it.prop(
   "integer addition is commutative",
-  { a: Schema.Int, b: FastCheck.integer() },
+  { a: Schema.Int, b: Arbitrary.schema(Schema.Int) },
   ({ a, b }) => a + b === b + a,
 )
 
@@ -115,11 +115,11 @@ it.effect.prop("Schema values reach Effects", { value: Schema.Int }, ({ value })
   Effect.sync(() => assert.strictEqual(Number.isInteger(value), true)))
 ```
 
-Pass FastCheck parameters with the `fastCheck` test option.
+Pass `Arbitrary` check options with the `arbitrary` test option.
 
 ```ts
 it.prop("bounded runs", { value: Schema.Int }, () => true, {
-  fastCheck: { numRuns: 100 },
+  arbitrary: { runs: 100 },
 })
 ```
 

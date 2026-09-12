@@ -9,12 +9,10 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { flow, pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
-import { isObject } from "effect/Predicate"
-import * as Rec from "effect/Record"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
-import * as fc from "effect/testing/FastCheck"
+import * as Arbitrary from "effect/unstable/arbitrary/Arbitrary"
 import * as TestClock from "effect/testing/TestClock"
 import * as TestConsole from "effect/testing/TestConsole"
 import type * as Bun from "../index.ts"
@@ -53,6 +51,47 @@ const testOptions = (options?: number | Bun.BunTest.TestOptions): number | B.Tes
 
 const hookTimeout = (timeout?: Duration.Input) =>
   timeout === undefined ? undefined : Duration.toMillis(Duration.fromInputUnsafe(timeout))
+
+type ArbitraryInput = Schema.Schema<any> | Arbitrary.Arbitrary<unknown>
+
+const compileArbitraryInput = (input: ArbitraryInput): Arbitrary.Arbitrary<any> =>
+  Arbitrary.isArbitrary(input) ? input : Arbitrary.schema(input)
+
+const makeArbitrary = (arbitraries: Bun.BunTest.Arbitraries): Arbitrary.Arbitrary<any> =>
+  Arbitrary.all(
+    Array.isArray(arbitraries)
+      ? arbitraries.map(compileArbitraryInput)
+      : Object.fromEntries(Object.entries(arbitraries).map(([key, input]) => [key, compileArbitraryInput(input)]))
+  )
+
+const normalizeProperty = <A, E, R>(
+  property: (value: A) => boolean | Effect.Effect<boolean, E, R>,
+  value: A
+): Effect.Effect<boolean, E | Cause.Cause<E>, R> =>
+  Effect.catchCause(
+    Effect.suspend(() => {
+      const output = property(value)
+      return Effect.isEffect(output) ? output : Effect.succeed(output)
+    }),
+    (cause): Effect.Effect<never, E | Cause.Cause<E>> =>
+      Cause.hasInterrupts(cause) ? Effect.failCause(cause) : Effect.fail(cause)
+  )
+
+const runCheck = <A, E>(
+  runner: ReturnType<typeof makeRunner>,
+  arbitrary: Arbitrary.Arbitrary<A>,
+  property: (value: A) => boolean | Effect.Effect<boolean, E, never>,
+  options: Arbitrary.CheckOptions | undefined
+): Promise<unknown> =>
+  runner.run(
+    Effect.flatMapEager(
+      Arbitrary.checkEffect(arbitrary, (value) => normalizeProperty(property, value), options),
+      (result) => {
+        const failure = Arbitrary.formatCheckFailure(result)
+        return failure === undefined ? Effect.void : Effect.die(new Error(failure))
+      }
+    )
+  )
 
 const runHook = <E, A>(effect: Effect.Effect<A, E, never>, timeout?: Duration.Input) => {
   const millis = hookTimeout(timeout)
@@ -178,51 +217,20 @@ const makeTester = <R>(
   }
 
   const prop: Bun.BunTest.Tester<R>["prop"] = (name, arbitraries, self, options) => {
-    if (Array.isArray(arbitraries)) {
-      const arbs = arbitraries.map((arbitrary) =>
-        Schema.isSchema(arbitrary) ? Schema.toArbitrary(arbitrary)(fc) : arbitrary as fc.Arbitrary<any>
-      )
-      return it.serial(
-        name,
-        () => {
-          const runner = makeRunner()
-          return fc.assert(
-            // @ts-ignore
-            fc.asyncProperty(...arbs, (...as) =>
-              runner.run(pipe(
-                Effect.suspend(() => self(as as any, runner.context)),
-                mapEffect
-              ))),
-            // @ts-ignore
-            isObject(options) ? options.fastCheck : {}
-          )
-        },
-        testOptions(options)
-      )
-    }
-
-    const arbs = fc.record(
-      Object.keys(arbitraries).reduce(function(result, key) {
-        const arbitrary: any = arbitraries[key]
-        Rec.assignProperty(result, key, Schema.isSchema(arbitrary) ? Schema.toArbitrary(arbitrary)(fc) : arbitrary)
-        return result
-      }, {} as Record<string, fc.Arbitrary<any>>)
-    )
-
+    const arbitrary = makeArbitrary(arbitraries)
     return it.serial(
       name,
       () => {
         const runner = makeRunner()
-        return fc.assert(
-          // @ts-ignore
-          fc.asyncProperty(arbs, (as) =>
-            // @ts-ignore
-            runner.run(pipe(
-              Effect.suspend(() => self(as as any, runner.context)),
-              mapEffect
-            ))),
-          // @ts-ignore
-          isObject(options) ? options.fastCheck : {}
+        return runCheck(
+          runner,
+          arbitrary,
+          (values) =>
+            pipe(
+              mapEffect(Effect.suspend(() => self(values as any, runner.context))),
+              Effect.mapEager((output) => (output as unknown) !== false)
+            ),
+          typeof options === "object" ? options?.arbitrary : undefined
         )
       },
       testOptions(options)
@@ -234,41 +242,16 @@ const makeTester = <R>(
 
 /** @internal */
 export const prop: Bun.BunTest.Methods["prop"] = (name, arbitraries, self, options) => {
-  if (Array.isArray(arbitraries)) {
-    const arbs = arbitraries.map((arbitrary) =>
-      Schema.isSchema(arbitrary) ? Schema.toArbitrary(arbitrary)(fc) : arbitrary
-    )
-    return B.it.serial(
-      name,
-      () => {
-        const runner = makeRunner()
-        return fc.assert(
-          // @ts-ignore
-          fc.property(...arbs, (...as) => self(as, runner.context)),
-          // @ts-ignore
-          isObject(options) ? options.fastCheck : {}
-        )
-      },
-      testOptions(options)
-    )
-  }
-
-  const arbs = fc.record(
-    Object.keys(arbitraries).reduce(function(result, key) {
-      const arbitrary: any = arbitraries[key]
-      Rec.assignProperty(result, key, Schema.isSchema(arbitrary) ? Schema.toArbitrary(arbitrary)(fc) : arbitrary)
-      return result
-    }, {} as Record<string, fc.Arbitrary<any>>)
-  )
-
+  const arbitrary = makeArbitrary(arbitraries)
   return B.it.serial(
     name,
     () => {
       const runner = makeRunner()
-      return fc.assert(
-        fc.property(arbs, (as) => self(as as any, runner.context)),
-        // @ts-ignore
-        isObject(options) ? options.fastCheck : {}
+      return runCheck(
+        runner,
+        arbitrary,
+        (values) => (self(values as any, runner.context) as unknown) !== false,
+        typeof options === "object" ? options?.arbitrary : undefined
       )
     },
     testOptions(options)
@@ -385,3 +368,15 @@ export const makeMethods = (it: API): Bun.BunTest.Methods =>
     layer,
     prop
   })
+
+/** @internal */
+export const {
+  /** @internal */
+  effect,
+  /** @internal */
+  live
+} = makeMethods(B.it)
+
+/** @internal */
+export const describeWrapped = (name: string, f: (it: Bun.BunTest.Methods) => void): void =>
+  B.describe(name, () => f(makeMethods(B.it)))

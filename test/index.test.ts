@@ -1,6 +1,7 @@
 import { assert, describe, flakyTest, it, layer, test } from "@yeoularu/effect-bun-test"
 import { Clock, Context, Duration, Effect, Fiber, Layer, Schema } from "effect"
-import { FastCheck, TestClock, TestConsole } from "effect/testing"
+import { TestClock, TestConsole } from "effect/testing"
+import * as Arbitrary from "effect/unstable/arbitrary/Arbitrary"
 import { fileURLToPath } from "node:url"
 
 describe("Effect tests", () => {
@@ -206,14 +207,14 @@ describe("layers", () => {
 })
 
 describe("property tests", () => {
-  const integer = FastCheck.integer()
+  const integer = Arbitrary.schema(Schema.Int)
 
   it.prop("runs pure properties", [integer], ([n]) => Number.isInteger(n), {
-    fastCheck: { numRuns: 10 }
+    arbitrary: { runs: 10 }
   })
 
   it.prop("derives pure properties from Schema", { n: Schema.Int }, ({ n }) => Number.isInteger(n), {
-    fastCheck: { numRuns: 10 }
+    arbitrary: { runs: 10 }
   })
 
   it.effect.prop(
@@ -221,7 +222,7 @@ describe("property tests", () => {
     { n: Schema.Int },
     ({ n }) => Effect.sync(() => assert.strictEqual(Number.isInteger(n), true)),
     {
-      fastCheck: { numRuns: 10 }
+      arbitrary: { runs: 10 }
     }
   )
 })
